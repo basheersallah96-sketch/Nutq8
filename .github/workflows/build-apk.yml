@@ -23,6 +23,7 @@ jobs:
           PKG=$(find . -name package.json -not -path "*/node_modules/*" | head -n1)
           cd "$(dirname "$PKG")"
           npm install
+          npm install @capacitor/core @capacitor/cli @capacitor/android
           npx cap add android
           npx cap sync android
           cd android
