@@ -1,35 +1,51 @@
-name: Build APK
+name: Build Android
+
 on:
   workflow_dispatch:
-permissions:
-  contents: write
+  push:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
+
       - uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: 21
-      - run: pip install pillow
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install Pillow (for app icons)
+        run: pip install pillow
+
       - name: Build
+        env:
+          UPLOAD_KEYSTORE_B64: ${{ secrets.UPLOAD_KEYSTORE_B64 }}
+          UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
         run: |
           ZIP=$(find . -maxdepth 2 -iname "*.zip" | head -n1)
-          if [ -n "$ZIP" ]; then mkdir -p work && unzip -q "$ZIP" -d work; fi
-          PKG=$(find . -name package.json -not -path "*/node_modules/*" | head -n1)
+          echo "Using $ZIP"
+          rm -rf build_src
+          unzip -q -o "$ZIP" -d build_src
+          PKG=$(find build_src -maxdepth 3 -name package.json -not -path '*/node_modules/*' | head -n1)
           cd "$(dirname "$PKG")"
-          npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap add android
-          npx cap sync android
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
-      - uses: softprops/action-gh-release@v2
+          # ci_build.sh: npm install, cap sync (no "cap add"), builds the debug APK,
+          # and the signed release .aab only if the UPLOAD_* secrets exist
+          bash tools/ci_build.sh
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/out/"
+          if [ -f android/app/build/outputs/bundle/release/app-release.aab ]; then
+            cp android/app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/out/"
+          fi
+
+      - name: Upload build outputs
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: v${{ github.run_number }}
-          files: "**/app-debug.apk"
+          name: nutq-android
+          path: out/
